@@ -179,14 +179,14 @@ class CoinEXLatencyMonitor:
                     
                     logger.info("WebSocket connected successfully")
                     
-                    # 读取欢迎消息
-                    welcome_data = await websocket.recv()
-                    if isinstance(welcome_data, bytes):
-                        welcome_msg = self.decompress_message(welcome_data)
-                    else:
-                        welcome_msg = welcome_data
+                    # # 读取欢迎消息
+                    # welcome_data = await websocket.recv()
+                    # if isinstance(welcome_data, bytes):
+                    #     welcome_msg = self.decompress_message(welcome_data)
+                    # else:
+                    #     welcome_msg = welcome_data
                     
-                    logger.info(f"Welcome message: {welcome_msg}")
+                    # logger.info(f"Welcome message: {welcome_msg}")
                     
                     # 发送订阅消息
                     depth_sub_json = json.dumps(self.depth_sub)
