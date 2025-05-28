@@ -100,15 +100,15 @@ class CoinEXLatencyMonitor:
     async def handle_message(self, message: str):
         """处理WebSocket消息"""
         try:
-            # 记录原始消息
-            logger.info(f"[RAW MESSAGE] {message}")
-            
             data = json.loads(message)
             
             # 处理pong消息
             if data.get("method") == "server.pong":
                 logger.info("Received pong message")
                 return
+            
+            # 先计算延迟，再决定是否记录原始消息
+            should_log_raw = False
             
             # 处理depth更新
             if data.get("method") == "depth.update":
@@ -117,6 +117,8 @@ class CoinEXLatencyMonitor:
                     if update_at:
                         logger.info(f"[DEPTH UPDATE] Found updateAt: {update_at}")
                         latency = self.calculate_latency(update_at)
+                        if latency > 1000:  # 延迟大于1秒
+                            should_log_raw = True
                         self.log_latency_stats(latency, "DEPTH")
                     else:
                         logger.warning("[DEPTH UPDATE] No updated_at field found")
@@ -130,6 +132,8 @@ class CoinEXLatencyMonitor:
                     if update_at:
                         logger.info(f"[BBO UPDATE] Found updateAt: {update_at}")
                         latency = self.calculate_latency(update_at)
+                        if latency > 1000:  # 延迟大于1秒
+                            should_log_raw = True
                         self.log_latency_stats(latency, "BBO")
                     else:
                         logger.warning("[BBO UPDATE] No updated_at field found")
@@ -142,6 +146,10 @@ class CoinEXLatencyMonitor:
                     logger.info(f"Subscription successful: {message}")
                 else:
                     logger.error(f"Subscription failed: {message}")
+            
+            # 只有延迟大于1秒时才记录原始消息
+            if should_log_raw:
+                logger.info(f"[HIGH LATENCY RAW MESSAGE] {message}")
                     
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON message: {e}")
@@ -178,15 +186,6 @@ class CoinEXLatencyMonitor:
                 ) as websocket:
                     
                     logger.info("WebSocket connected successfully")
-                    
-                    # # 读取欢迎消息
-                    # welcome_data = await websocket.recv()
-                    # if isinstance(welcome_data, bytes):
-                    #     welcome_msg = self.decompress_message(welcome_data)
-                    # else:
-                    #     welcome_msg = welcome_data
-                    
-                    # logger.info(f"Welcome message: {welcome_msg}")
                     
                     # 发送订阅消息
                     depth_sub_json = json.dumps(self.depth_sub)
@@ -235,7 +234,7 @@ async def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="CoinEX WebSocket Latency Monitor")
-    parser.add_argument("--coin", default="BTC", help="Coin symbol (default: BTC)")
+    parser.add_argument("--coin", default="MAGA", help="Coin symbol (default: MAGA)")
     parser.add_argument("--currency", default="USDT", help="Currency symbol (default: USDT)")
     
     args = parser.parse_args()
