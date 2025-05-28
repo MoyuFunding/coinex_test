@@ -21,10 +21,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class CoinEXLatencyMonitor:
-    def __init__(self, coin: str = "BTC", currency: str = "USDT"):
+    def __init__(self, coin: str = "BTC", currency: str = "USDT", enable_ping: bool = False):
         self.coin = coin.upper()
         self.currency = currency.upper()
         self.ws_url = "wss://socket.coinex.com/v2/spot"
+        self.enable_ping = enable_ping
         
         # 订阅消息模板
         self.depth_sub = {
@@ -43,7 +44,7 @@ class CoinEXLatencyMonitor:
             "id": 1958
         }
         
-        self.ping_msg = {"method": "server.ping", "params": [], "id": 1959}
+        self.ping_msg = {"method": "server.ping", "params": {}, "id": 1959}
         
         # 统计数据
         self.latency_stats = []
@@ -160,7 +161,7 @@ class CoinEXLatencyMonitor:
         """定期发送ping消息"""
         while True:
             try:
-                await asyncio.sleep(10)  # 每10秒发送一次ping
+                await asyncio.sleep(30)  # 每30秒发送一次ping
                 ping_json = json.dumps(self.ping_msg)
                 logger.info(f"[SEND PING] {ping_json}")
                 await websocket.send(ping_json)
@@ -180,8 +181,8 @@ class CoinEXLatencyMonitor:
                 async with websockets.connect(
                     self.ws_url,
                     compression=None,  # 手动处理gzip压缩
-                    ping_interval=None,  # 禁用自动ping
-                    ping_timeout=None,
+                    ping_interval=20 if not self.enable_ping else None,  # 如果不使用自定义ping，则启用内置ping
+                    ping_timeout=10,
                     close_timeout=10
                 ) as websocket:
                     
@@ -198,8 +199,13 @@ class CoinEXLatencyMonitor:
                     await websocket.send(bbo_sub_json)
                     logger.info("Sent BBO subscription")
                     
-                    # 启动ping任务
-                    ping_task = asyncio.create_task(self.send_ping(websocket))
+                    # 启动ping任务（如果启用）
+                    ping_task = None
+                    if self.enable_ping:
+                        ping_task = asyncio.create_task(self.send_ping(websocket))
+                        logger.info("Ping task started")
+                    else:
+                        logger.info("Ping disabled, relying on WebSocket built-in keepalive")
                     
                     try:
                         # 主消息循环
@@ -213,11 +219,12 @@ class CoinEXLatencyMonitor:
                                 await self.handle_message(message)
                                 
                     finally:
-                        ping_task.cancel()
-                        try:
-                            await ping_task
-                        except asyncio.CancelledError:
-                            pass
+                        if ping_task:
+                            ping_task.cancel()
+                            try:
+                                await ping_task
+                            except asyncio.CancelledError:
+                                pass
                             
             except ConnectionClosed:
                 logger.warning("WebSocket connection closed, reconnecting in 2 seconds...")
@@ -236,10 +243,11 @@ async def main():
     parser = argparse.ArgumentParser(description="CoinEX WebSocket Latency Monitor")
     parser.add_argument("--coin", default="MAGA", help="Coin symbol (default: MAGA)")
     parser.add_argument("--currency", default="USDT", help="Currency symbol (default: USDT)")
+    parser.add_argument("--enable-ping", action="store_true", help="Enable sending ping messages")
     
     args = parser.parse_args()
     
-    monitor = CoinEXLatencyMonitor(args.coin, args.currency)
+    monitor = CoinEXLatencyMonitor(args.coin, args.currency, args.enable_ping)
     
     try:
         await monitor.connect_and_monitor()
