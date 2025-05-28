@@ -21,11 +21,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class CoinEXLatencyMonitor:
-    def __init__(self, coin: str = "BTC", currency: str = "USDT", enable_ping: bool = False):
+    def __init__(self, coin: str = "BTC", currency: str = "USDT", enable_ping: bool = False, bbo_only: bool = False):
         self.coin = coin.upper()
         self.currency = currency.upper()
         self.ws_url = "wss://socket.coinex.com/v2/spot"
         self.enable_ping = enable_ping
+        self.bbo_only = bbo_only
         
         # 订阅消息模板
         self.depth_sub = {
@@ -161,7 +162,7 @@ class CoinEXLatencyMonitor:
         """定期发送ping消息"""
         while True:
             try:
-                await asyncio.sleep(30)  # 每30秒发送一次ping
+                await asyncio.sleep(10)  # 每10秒发送一次ping
                 ping_json = json.dumps(self.ping_msg)
                 logger.info(f"[SEND PING] {ping_json}")
                 await websocket.send(ping_json)
@@ -189,10 +190,11 @@ class CoinEXLatencyMonitor:
                     logger.info("WebSocket connected successfully")
                     
                     # 发送订阅消息
-                    depth_sub_json = json.dumps(self.depth_sub)
-                    logger.info(f"[SEND DEPTH SUB] {depth_sub_json}")
-                    await websocket.send(depth_sub_json)
-                    logger.info("Sent depth subscription")
+                    if not self.bbo_only:
+                        depth_sub_json = json.dumps(self.depth_sub)
+                        logger.info(f"[SEND DEPTH SUB] {depth_sub_json}")
+                        await websocket.send(depth_sub_json)
+                        logger.info("Sent depth subscription")
                     
                     bbo_sub_json = json.dumps(self.bbo_sub)
                     logger.info(f"[SEND BBO SUB] {bbo_sub_json}")
@@ -210,13 +212,17 @@ class CoinEXLatencyMonitor:
                     try:
                         # 主消息循环
                         async for message in websocket:
-                            if isinstance(message, bytes):
-                                # 解压gzip消息
-                                decompressed = self.decompress_message(message)
-                                if decompressed:
-                                    await self.handle_message(decompressed)
-                            else:
-                                await self.handle_message(message)
+                            try:
+                                if isinstance(message, bytes):
+                                    # 解压gzip消息
+                                    decompressed = self.decompress_message(message)
+                                    if decompressed:
+                                        await self.handle_message(decompressed)
+                                else:
+                                    await self.handle_message(message)
+                            except Exception as msg_err:
+                                logger.error(f"Error processing message: {msg_err}")
+                                continue
                                 
                     finally:
                         if ping_task:
@@ -226,8 +232,8 @@ class CoinEXLatencyMonitor:
                             except asyncio.CancelledError:
                                 pass
                             
-            except ConnectionClosed:
-                logger.warning("WebSocket connection closed, reconnecting in 2 seconds...")
+            except ConnectionClosed as e:
+                logger.warning(f"WebSocket connection closed: {e}, reconnecting in 2 seconds...")
                 await asyncio.sleep(2)
             except WebSocketException as e:
                 logger.error(f"WebSocket error: {e}, reconnecting in 2 seconds...")
@@ -244,10 +250,11 @@ async def main():
     parser.add_argument("--coin", default="MAGA", help="Coin symbol (default: MAGA)")
     parser.add_argument("--currency", default="USDT", help="Currency symbol (default: USDT)")
     parser.add_argument("--enable-ping", action="store_true", help="Enable sending ping messages")
+    parser.add_argument("--bbo-only", action="store_true", help="Only subscribe to BBO updates")
     
     args = parser.parse_args()
     
-    monitor = CoinEXLatencyMonitor(args.coin, args.currency, args.enable_ping)
+    monitor = CoinEXLatencyMonitor(args.coin, args.currency, args.enable_ping, args.bbo_only)
     
     try:
         await monitor.connect_and_monitor()
