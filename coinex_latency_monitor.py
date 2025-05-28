@@ -160,7 +160,7 @@ class CoinEXLatencyMonitor:
         """定期发送ping消息"""
         while True:
             try:
-                await asyncio.sleep(30)  # 每30秒发送一次ping
+                await asyncio.sleep(10)  # 每10秒发送一次ping
                 ping_json = json.dumps(self.ping_msg)
                 logger.info(f"[SEND PING] {ping_json}")
                 await websocket.send(ping_json)
