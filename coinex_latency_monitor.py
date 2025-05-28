@@ -61,6 +61,10 @@ class CoinEXLatencyMonitor:
         """计算延迟：本地时间 - updateAt时间（毫秒）"""
         local_time_ms = int(time.time() * 1000)
         latency_ms = local_time_ms - update_at
+        
+        # 记录详细的时间差计算过程
+        logger.info(f"[TIME CALC] Local time: {local_time_ms}ms, UpdateAt: {update_at}ms, Latency: {latency_ms}ms")
+        
         return latency_ms
     
     def log_latency_stats(self, latency_ms: float, message_type: str):
@@ -96,6 +100,9 @@ class CoinEXLatencyMonitor:
     async def handle_message(self, message: str):
         """处理WebSocket消息"""
         try:
+            # 记录原始消息
+            logger.info(f"[RAW MESSAGE] {message}")
+            
             data = json.loads(message)
             
             # 处理pong消息
@@ -108,16 +115,26 @@ class CoinEXLatencyMonitor:
                 if "data" in data and "depth" in data["data"]:
                     update_at = data["data"]["depth"].get("updated_at")
                     if update_at:
+                        logger.info(f"[DEPTH UPDATE] Found updateAt: {update_at}")
                         latency = self.calculate_latency(update_at)
                         self.log_latency_stats(latency, "DEPTH")
+                    else:
+                        logger.warning("[DEPTH UPDATE] No updated_at field found")
+                else:
+                    logger.warning("[DEPTH UPDATE] Invalid data structure")
             
             # 处理BBO更新
             elif data.get("method") == "bbo.update":
                 if "data" in data:
                     update_at = data["data"].get("updated_at")
                     if update_at:
+                        logger.info(f"[BBO UPDATE] Found updateAt: {update_at}")
                         latency = self.calculate_latency(update_at)
                         self.log_latency_stats(latency, "BBO")
+                    else:
+                        logger.warning("[BBO UPDATE] No updated_at field found")
+                else:
+                    logger.warning("[BBO UPDATE] Invalid data structure")
             
             # 处理订阅确认
             elif "code" in data:
@@ -136,7 +153,9 @@ class CoinEXLatencyMonitor:
         while True:
             try:
                 await asyncio.sleep(30)  # 每30秒发送一次ping
-                await websocket.send(json.dumps(self.ping_msg))
+                ping_json = json.dumps(self.ping_msg)
+                logger.info(f"[SEND PING] {ping_json}")
+                await websocket.send(ping_json)
                 logger.info("Sent ping message")
             except Exception as e:
                 logger.error(f"Failed to send ping: {e}")
@@ -170,10 +189,14 @@ class CoinEXLatencyMonitor:
                     logger.info(f"Welcome message: {welcome_msg}")
                     
                     # 发送订阅消息
-                    await websocket.send(json.dumps(self.depth_sub))
+                    depth_sub_json = json.dumps(self.depth_sub)
+                    logger.info(f"[SEND DEPTH SUB] {depth_sub_json}")
+                    await websocket.send(depth_sub_json)
                     logger.info("Sent depth subscription")
                     
-                    await websocket.send(json.dumps(self.bbo_sub))
+                    bbo_sub_json = json.dumps(self.bbo_sub)
+                    logger.info(f"[SEND BBO SUB] {bbo_sub_json}")
+                    await websocket.send(bbo_sub_json)
                     logger.info("Sent BBO subscription")
                     
                     # 启动ping任务
