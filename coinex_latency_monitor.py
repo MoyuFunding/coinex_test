@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class CoinEXLatencyMonitor:
-    def __init__(self, coin: str = "BTC", currency: str = "USDT", enable_ping: bool = False, bbo_only: bool = False):
+    def __init__(self, coin: str = "BTC", currency: str = "USDT", enable_ping: bool = True, bbo_only: bool = False):
         self.coin = coin.upper()
         self.currency = currency.upper()
         self.ws_url = "wss://socket.coinex.com/v2/spot"
@@ -182,8 +182,8 @@ class CoinEXLatencyMonitor:
                 async with websockets.connect(
                     self.ws_url,
                     compression=None,  # 手动处理gzip压缩
-                    ping_interval=20 if not self.enable_ping else None,  # 如果不使用自定义ping，则启用内置ping
-                    ping_timeout=10,
+                    ping_interval=None,  # 完全禁用内置ping
+                    ping_timeout=None,   # 禁用ping超时
                     close_timeout=10
                 ) as websocket:
                     
@@ -249,12 +249,12 @@ async def main():
     parser = argparse.ArgumentParser(description="CoinEX WebSocket Latency Monitor")
     parser.add_argument("--coin", default="MAGA", help="Coin symbol (default: MAGA)")
     parser.add_argument("--currency", default="USDT", help="Currency symbol (default: USDT)")
-    parser.add_argument("--enable-ping", action="store_true", help="Enable sending ping messages")
+    parser.add_argument("--disable-ping", action="store_true", help="Disable sending ping messages")
     parser.add_argument("--bbo-only", action="store_true", help="Only subscribe to BBO updates")
     
     args = parser.parse_args()
     
-    monitor = CoinEXLatencyMonitor(args.coin, args.currency, args.enable_ping, args.bbo_only)
+    monitor = CoinEXLatencyMonitor(args.coin, args.currency, not args.disable_ping, args.bbo_only)
     
     try:
         await monitor.connect_and_monitor()
